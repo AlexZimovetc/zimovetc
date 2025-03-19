@@ -1,0 +1,259 @@
+import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
+# Указываем токен напрямую
+TOKEN = '1234567890:ABCdefGhIJKlmNoPQRstuVWXyzAbCdEfGhI'  # Замените на ваш токен
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Список всех доступных тегов (без #)
+ALL_TAGS = [
+    "neofolk", "industrial", "hiphop", "jazz", "rock", "cinematic", "ambient", "noise", "dnb", "vocal",
+    "chiptune", "experimental", "beat", "mathrock", "midwest", "metal", "progressivemetal", "EDM", "IDM",
+    "dance", "pop", "cinematic", "classical", "shoegaze", "софтрок", "баллада", "softrock", "ballad",
+    "acoustic", "minimal", "breakcore", "blackmetal", "funk", "unmixeddemo", "melodyidea", "harmonicidea",
+    "rhythmidea", "prerelease", "release", "composition", "mixing", "collab", "arrange", "onlyplus", "onlyminus",
+    "triphop"
+]
+
+# Словарь для хранения подписок пользователей
+subscriptions = {}
+
+# Словарь для хранения username пользователей
+user_usernames = {}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Начальное приветствие и список команд"""
+    welcome_text = """
+Добро пожаловать! Вот список доступных команд:
+
+/subscribe <теги через запятую> - Подписаться на теги.
+/subscribe_all - Подписаться на все теги.
+/unsubscribe <теги через запятую> - Отписаться от тегов.
+/unsubscribe_all - Отписаться от всех тегов.
+/mytags - Показать теги, на которые вы подписаны.
+/alltags - Показать все доступные теги.
+
+Пример использования:
+/subscribe rock, jazz - подписаться на теги rock и jazz.
+/unsubscribe rock - отписаться от тега rock.
+"""
+    await update.message.reply_text(welcome_text)
+
+async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Подписка на несколько тегов через запятую"""
+    if not context.args:
+        await update.message.reply_text('Пожалуйста, укажите теги после команды. Например: /subscribe rock, jazz, ambient')
+        return
+
+    user_id = update.message.from_user.id
+    username = update.message.from_user.username
+
+    # Разделяем теги по запятой и убираем пробелы
+    tags = [tag.strip().lower() for tag in " ".join(context.args).split(",")]
+
+    # Проверяем, что все теги существуют
+    invalid_tags = [tag for tag in tags if tag not in ALL_TAGS]
+    if invalid_tags:
+        await update.message.reply_text(f'Следующие теги не найдены: {", ".join(invalid_tags)}. Используйте /alltags для просмотра всех тегов.')
+        return
+
+    # Добавляем теги в подписки
+    if user_id not in subscriptions:
+        subscriptions[user_id] = []
+
+    added_tags = []
+    for tag in tags:
+        if tag not in subscriptions[user_id]:
+            subscriptions[user_id].append(tag)
+            added_tags.append(tag)
+
+    if added_tags:
+        await update.message.reply_text(f'Вы подписались на теги: {", ".join(added_tags)}')
+        if username:
+            user_usernames[user_id] = username
+    else:
+        await update.message.reply_text('Вы уже подписаны на все указанные теги.')
+
+async def subscribe_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Подписка на все теги"""
+    user_id = update.message.from_user.id
+    username = update.message.from_user.username
+
+    if user_id not in subscriptions:
+        subscriptions[user_id] = []
+
+    # Добавляем все теги
+    added_tags = []
+    for tag in ALL_TAGS:
+        if tag not in subscriptions[user_id]:
+            subscriptions[user_id].append(tag)
+            added_tags.append(tag)
+
+    if added_tags:
+        await update.message.reply_text(f'Вы подписались на все теги: {", ".join(added_tags)}')
+        if username:
+            user_usernames[user_id] = username
+    else:
+        await update.message.reply_text('Вы уже подписаны на все теги.')
+
+async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отписка от нескольких тегов через запятую"""
+    if not context.args:
+        await update.message.reply_text('Пожалуйста, укажите теги после команды. Например: /unsubscribe rock, jazz')
+        return
+
+    user_id = update.message.from_user.id
+
+    # Разделяем теги по запятой и убираем пробелы
+    tags = [tag.strip().lower() for tag in " ".join(context.args).split(",")]
+
+    # Проверяем, что все теги существуют
+    invalid_tags = [tag for tag in tags if tag not in ALL_TAGS]
+    if invalid_tags:
+        await update.message.reply_text(f'Следующие теги не найдены: {", ".join(invalid_tags)}. Используйте /alltags для просмотра всех тегов.')
+        return
+
+    # Удаляем теги из подписок
+    if user_id not in subscriptions:
+        await update.message.reply_text('Вы не подписаны ни на один тег.')
+        return
+
+    removed_tags = []
+    for tag in tags:
+        if tag in subscriptions[user_id]:
+            subscriptions[user_id].remove(tag)
+            removed_tags.append(tag)
+
+    if removed_tags:
+        await update.message.reply_text(f'Вы отписались от тегов: {", ".join(removed_tags)}')
+        if not subscriptions[user_id]:
+            del subscriptions[user_id]
+            if user_id in user_usernames:
+                del user_usernames[user_id]
+    else:
+        await update.message.reply_text('Вы не подписаны на указанные теги.')
+
+async def unsubscribe_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отписка от всех тегов"""
+    user_id = update.message.from_user.id
+
+    if user_id not in subscriptions or not subscriptions[user_id]:
+        await update.message.reply_text("Вы не подписаны ни на один тег.")
+        return
+
+    # Удаляем все теги
+    removed_tags = subscriptions[user_id]
+    del subscriptions[user_id]
+
+    if user_id in user_usernames:
+        del user_usernames[user_id]
+
+    await update.message.reply_text(f'Вы отписались от всех тегов: {", ".join(removed_tags)}')
+
+async def show_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показывает все теги, на которые подписан пользователь"""
+    user_id = update.message.from_user.id
+
+    if user_id in subscriptions and subscriptions[user_id]:
+        tags_list = "\n".join(subscriptions[user_id])
+        await update.message.reply_text(f"Ваши подписки:\n{tags_list}")
+    else:
+        await update.message.reply_text("Вы не подписаны ни на один тег.")
+
+async def show_all_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показывает все доступные теги"""
+    tags_list = "\n".join(ALL_TAGS)
+    await update.message.reply_text(f"Доступные теги для подписки:\n{tags_list}")
+
+async def notify_users(tags: list, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Уведомление пользователей о сообщении по нескольким тегам"""
+    # Собираем всех пользователей, подписанных на указанные теги
+    users_with_tags = {}
+    for tag in tags:
+        if tag in ALL_TAGS:
+            for user_id, user_tags in subscriptions.items():
+                if tag in user_tags:
+                    if user_id not in users_with_tags:
+                        users_with_tags[user_id] = set()
+                    users_with_tags[user_id].add(tag)
+
+    if users_with_tags:
+        mentions = []
+        for user_id, tags_subscribed in users_with_tags.items():
+            username = user_usernames.get(user_id)
+            if username:
+                mentions.append(f"@{username} ({', '.join(tags_subscribed)})")
+            else:
+                user = await context.bot.get_chat(user_id)
+                mentions.append(f"{user.first_name} ({', '.join(tags_subscribed)})")
+
+        mentions_text = ", ".join(mentions)
+        message_text = f'Новое сообщение по тегам: {", ".join(tags)}\nУпоминания: {mentions_text}'
+
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=message_text)
+        except Exception as e:
+            logging.error(f"Ошибка отправки сообщения в чат {chat_id}: {e}")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработка сообщений"""
+    chat_id = update.message.chat.id
+
+    # Обработка текстовых сообщений и подписей к медиа
+    if update.message.text:
+        message_text = update.message.text
+    elif update.message.caption:
+        message_text = update.message.caption
+    else:
+        message_text = None
+
+    if message_text:
+        # Извлекаем теги без # и приводим к нижнему регистру
+        tags = list(set(word[1:].lower() for word in message_text.split() if word.startswith('#')))
+
+        # Фильтруем теги, оставляя только те, что есть в ALL_TAGS
+        valid_tags = [tag for tag in tags if tag in ALL_TAGS]
+
+        if valid_tags:
+            await notify_users(valid_tags, context, chat_id)
+
+    # Обработка .wav и .mp3 файлов без подписи
+    elif update.message.document and (
+        update.message.document.file_name.endswith('.wav') or
+        update.message.document.file_name.endswith('.mp3')
+    ):
+        if update.message.caption:
+            # Если есть подпись, извлекаем теги
+            tags = list(set(word[1:].lower() for word in update.message.caption.split() if word.startswith('#')))
+            valid_tags = [tag for tag in tags if tag in ALL_TAGS]
+            if valid_tags:
+                await notify_users(valid_tags, context, chat_id)
+        else:
+            # Если подписи нет, отправляем сообщение
+            await update.message.reply_text("Демка без тега? Ну и лох ты. Добавь тег, чтобы уведомить подписчиков.")
+
+def main():
+    """Начальная функция"""
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    # Добавляем обработчики только один раз
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("subscribe", subscribe))
+    application.add_handler(CommandHandler("subscribe_all", subscribe_all))
+    application.add_handler(CommandHandler("unsubscribe", unsubscribe))
+    application.add_handler(CommandHandler("unsubscribe_all", unsubscribe_all))
+    application.add_handler(CommandHandler("mytags", show_tags))
+    application.add_handler(CommandHandler("alltags", show_all_tags))
+    application.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, handle_message))  # Обработка текста и подписей
+    application.add_handler(MessageHandler(filters.Document.FileExtension("wav") | filters.Document.FileExtension("mp3"), handle_message))  # Обработка .wav и .mp3 файлов
+
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()
